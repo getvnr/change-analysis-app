@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from io import BytesIO
 
 st.set_page_config(page_title="Change Analysis Dashboard", layout="wide")
 
@@ -31,6 +32,21 @@ if uploaded_file:
 
     st.subheader("Filtered Data Preview")
     st.dataframe(filtered_df.head(20))
+
+    # Download button for filtered data
+    def to_excel(df):
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Filtered_Data')
+        return output.getvalue()
+
+    excel_data = to_excel(filtered_df)
+    st.download_button(
+        label="Download Filtered Data as Excel",
+        data=excel_data,
+        file_name="filtered_changes.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
     # Weekend vs Weekday Pie Chart
     weekend_counts = filtered_df["Weekend"].value_counts().rename({True: "Weekend", False: "Weekday"})
