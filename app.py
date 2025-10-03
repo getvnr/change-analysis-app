@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from io import BytesIO
+import io
 
 st.set_page_config(page_title="Change Analysis Dashboard", layout="wide")
 
@@ -33,21 +33,6 @@ if uploaded_file:
     st.subheader("Filtered Data Preview")
     st.dataframe(filtered_df.head(20))
 
-    # Download button for filtered data
-    def to_excel(df):
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Filtered_Data')
-        return output.getvalue()
-
-    excel_data = to_excel(filtered_df)
-    st.download_button(
-        label="Download Filtered Data as Excel",
-        data=excel_data,
-        file_name="filtered_changes.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
     # Weekend vs Weekday Pie Chart
     weekend_counts = filtered_df["Weekend"].value_counts().rename({True: "Weekend", False: "Weekday"})
     fig1 = px.pie(values=weekend_counts.values, names=weekend_counts.index, title="Weekend vs Weekday Changes")
@@ -55,18 +40,53 @@ if uploaded_file:
 
     # Customer-wise Pie Chart (Status breakdown)
     st.subheader("Customer Status Breakdown")
+    figs_status = []
     for cust in customers:
         cust_df = filtered_df[filtered_df["customer"] == cust]
         if not cust_df.empty:
             status_counts = cust_df["Status"].value_counts()
             fig2 = px.pie(values=status_counts.values, names=status_counts.index, title=f"{cust} - Status Breakdown")
             st.plotly_chart(fig2, use_container_width=True)
+            figs_status.append((fig2, f"{cust}_status_breakdown"))
 
     # Time Trend of Changes
     st.subheader("Changes Over Time")
     time_trend = filtered_df.groupby(filtered_df["Start Date"].dt.date).size().reset_index(name="Counts")
     fig3 = px.bar(time_trend, x="Start Date", y="Counts", title="Daily Changes Trend")
     st.plotly_chart(fig3, use_container_width=True)
+
+    # --- Download Filtered Data ---
+    st.subheader("📥 Download Data")
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        filtered_df.to_excel(writer, index=False, sheet_name="FilteredData")
+    st.download_button(
+        label="Download Filtered Data (Excel)",
+        data=buffer.getvalue(),
+        file_name="filtered_changes.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    csv = filtered_df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download Filtered Data (CSV)",
+        data=csv,
+        file_name="filtered_changes.csv",
+        mime="text/csv"
+    )
+
+    # --- Download Charts ---
+    st.subheader("📊 Download Charts")
+    chart_list = [(fig1, "weekend_vs_weekday"), (fig3, "daily_trend")] + figs_status
+
+    for fig, name in chart_list:
+        img_bytes = fig.to_image(format="png")
+        st.download_button(
+            label=f"Download {name} chart (PNG)",
+            data=img_bytes,
+            file_name=f"{name}.png",
+            mime="image/png"
+        )
 
 else:
     st.info("👆 Please upload the Changes.xlsx file to start analysis.")
