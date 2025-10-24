@@ -1,94 +1,74 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import io
+import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Change Analysis Dashboard", layout="wide")
+st.set_page_config(page_title="Weekend Change Analyzer", page_icon="🧭", layout="wide")
 
-st.title("📊 Customer Change Analysis Dashboard")
+st.title("🧭 Middleware Change Analyzer")
+st.write("Upload a CSV or Excel file with your change data to analyze weekend activities.")
 
 # File upload
-uploaded_file = st.file_uploader("Upload Changes.xlsx", type=["xlsx"])
+uploaded_file = st.file_uploader("📂 Upload CSV or Excel file", type=["csv", "xlsx"])
 
 if uploaded_file:
-    # Load Excel file
-    df = pd.read_excel(uploaded_file, sheet_name="Sheet1")
-    df["Start Date"] = pd.to_datetime(df["Start Date"])
-    df["End Date"] = pd.to_datetime(df["End Date"])
-    df["Day"] = df["Start Date"].dt.day_name()
-    df["Weekend"] = df["Day"].isin(["Saturday", "Sunday"])
+    # Read CSV or Excel
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file, sep=None, engine="python")
+    else:
+        df = pd.read_excel(uploaded_file)
 
-    # Sidebar filters
-    customers = st.sidebar.multiselect(
-        "Select Customers",
-        options=df["customer"].unique(),
-        default=df["customer"].unique()
-    )
-    start_date = st.sidebar.date_input("Start Date", value=df["Start Date"].min().date())
-    end_date = st.sidebar.date_input("End Date", value=df["Start Date"].max().date())
+    # Clean column names
+    df.columns = [c.strip() for c in df.columns]
 
-    # Apply filters
-    mask = (
-        df["customer"].isin(customers)
-        & (df["Start Date"] >= pd.to_datetime(start_date))
-        & (df["Start Date"] <= pd.to_datetime(end_date))
-    )
-    filtered_df = df[mask]
+    # Convert Start and End Dates
+    for col in ["Start Date", "End Date"]:
+        df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
 
-    # Show filtered data
-    st.subheader("Filtered Data Preview")
-    st.dataframe(filtered_df.head(20))
+    # Show full dataset
+    st.subheader("📋 Raw Data")
+    st.dataframe(df)
 
-    # Weekend vs Weekday Pie Chart
-    weekend_counts = filtered_df["Weekend"].value_counts().rename({True: "Weekend", False: "Weekday"})
-    fig1 = px.pie(
-        values=weekend_counts.values,
-        names=weekend_counts.index,
-        title="Weekend vs Weekday Changes"
-    )
-    st.plotly_chart(fig1, use_container_width=True)
+    # Duration calculation
+    df["Duration (hrs)"] = (df["End Date"] - df["Start Date"]).dt.total_seconds() / 3600
 
-    # Customer-wise Pie Chart (Status breakdown)
-    st.subheader("Customer Status Breakdown")
-    for cust in customers:
-        cust_df = filtered_df[filtered_df["customer"] == cust]
-        if not cust_df.empty:
-            status_counts = cust_df["Status"].value_counts()
-            fig2 = px.pie(
-                values=status_counts.values,
-                names=status_counts.index,
-                title=f"{cust} - Status Breakdown"
-            )
-            st.plotly_chart(fig2, use_container_width=True)
+    # Weekend filter
+    df["Start Day"] = df["Start Date"].dt.day_name()
+    weekend_df = df[df["Start Day"].isin(["Friday", "Saturday", "Sunday"])]
 
-    # Daily trend of changes
-    st.subheader("Changes Over Time")
-    time_trend = filtered_df.groupby(filtered_df["Start Date"].dt.date).size().reset_index(name="Counts")
-    fig3 = px.bar(time_trend, x="Start Date", y="Counts", title="Daily Changes Trend")
-    st.plotly_chart(fig3, use_container_width=True)
+    st.subheader("🗓️ Weekend Changes (Fri–Sun)")
+    st.dataframe(weekend_df)
 
-    # --- Download Filtered Data ---
-    st.subheader("📥 Download Data")
+    # --- Number of changes per Customer ---
+    st.subheader("📊 Changes per Customer")
+    customer_summary = df.groupby("Customer")["Change"].nunique().reset_index()
+    customer_summary.columns = ["Customer", "Number of Changes"]
+    st.dataframe(customer_summary)
 
-    # Excel download
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        filtered_df.to_excel(writer, index=False, sheet_name="FilteredData")
-    st.download_button(
-        label="Download Filtered Data (Excel)",
-        data=buffer.getvalue(),
-        file_name="filtered_changes.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    # Plot: Changes by Customer
+    fig, ax = plt.subplots()
+    ax.bar(customer_summary["Customer"], customer_summary["Number of Changes"])
+    ax.set_xlabel("Customer")
+    ax.set_ylabel("Number of Changes")
+    ax.set_title("Changes by Customer")
+    st.pyplot(fig)
 
-    # CSV download
-    csv = filtered_df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="Download Filtered Data (CSV)",
-        data=csv,
-        file_name="filtered_changes.csv",
-        mime="text/csv"
-    )
+    # --- Status Summary ---
+    st.subheader("📈 Changes by Status")
+    status_summary = df.groupby("Status")["Change"].nunique().reset_index()
+    status_summary.columns = ["Status", "Number of Changes"]
+    st.dataframe(status_summary)
+
+    # --- Duration Summary ---
+    st.subheader("⏱️ Average Duration per Customer (hrs)")
+    duration_summary = df.groupby("Customer")["Duration (hrs)"].mean().reset_index()
+    duration_summary.columns = ["Customer", "Avg Duration (hrs)"]
+    st.dataframe(duration_summary)
+
+    # Weekend count summary
+    weekend_count = weekend_df.groupby("Customer")["Change"].nunique().reset_index()
+    weekend_count.columns = ["Customer", "Weekend Changes"]
+    st.subheader("🪴 Weekend Change Count")
+    st.dataframe(weekend_count)
 
 else:
-    st.info("👆 Please upload the Changes.xlsx file to start analysis.")
+    st.info("👆 Please upload a CSV or Excel file to begin.")
